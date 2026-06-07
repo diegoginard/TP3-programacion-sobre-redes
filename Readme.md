@@ -1,38 +1,96 @@
-# PFO 3 - Sistema Distribuido Cliente-Servidor
+# PFO 3 — Sistema Distribuido Cliente-Servidor
 
-## Descripción
-Rediseño de un sistema como arquitectura distribuida usando sockets en Python, con soporte para múltiples workers y thread pools.
+**Materia:** Programación sobre Redes  
+**Objetivo:** Rediseño de un sistema como arquitectura distribuida usando sockets en Python.
 
-## Estructura del Proyecto
+---
+
+## Arquitectura del sistema
+
 ```
-pfo3_distributed_system/
-├── diagram.md          # Diagrama en Mermaid
-├── server.py           # Servidor con thread pool
-├── client.py           # Cliente para enviar tareas
-└── README.md
+[Cliente Web / Móvil / Desktop]
+          │
+          ▼
+  [Balanceador de Carga]      ← Nginx / HAProxy
+          │
+    ┌─────┼─────┐
+    ▼     ▼     ▼
+[Worker] [Worker] [Worker]    ← Servidor.py (Thread Pool)
+    │       │       │
+    └───────┼───────┘
+            ▼
+        [RabbitMQ]            ← Cola de mensajes entre servidores
+            │
+    ┌───────┴───────┐
+    ▼               ▼
+[PostgreSQL]      [S3/MinIO]  ← Almacenamiento distribuido
 ```
 
-## Cómo Ejecutar
+El diagrama completo en Mermaid se encuentra en [`Diagram.md`](Diagram.md).
 
-### 1. Iniciar el Servidor
+---
+
+## Archivos
+
+| Archivo | Descripción |
+|---|---|
+| `Servidor.py` | Servidor TCP con pool de hilos (`ThreadPoolExecutor`). Recibe tareas de los clientes y las distribuye a workers. |
+| `Cliente.py` | Cliente TCP que envía una tarea al servidor y muestra el resultado. |
+| `Diagram.md` | Diagrama de la arquitectura completa en Mermaid. |
+
+---
+
+## Cómo ejecutar
+
+### 1. Iniciar el servidor
+
 ```bash
-python server.py
+python Servidor.py
 ```
 
-### 2. Ejecutar el Cliente (en otra terminal)
+Salida esperada:
+```
+[Servidor] Escuchando en 0.0.0.0:65432 con 4 workers
+```
+
+### 2. Ejecutar el cliente (en otra terminal)
+
 ```bash
-python client.py
-# o con tipo de tarea específica
-python client.py analizar_imagen
+python Cliente.py
 ```
 
-## Arquitectura
-- **Sockets TCP** para comunicación cliente-servidor.
-- **ThreadPoolExecutor** para procesar múltiples tareas concurrentemente.
-- Preparado para escalar con Load Balancer + RabbitMQ + PostgreSQL.
+Salida esperada:
+```
+Tipos de tarea disponibles:
+  1. calcular
+  2. procesar_texto
+  3. analizar_imagen
+Ingresá el tipo de tarea: calcular
+[Cliente] Tarea enviada: {'task_id': 'task_1749...', 'tipo': 'calcular', ...}
+[Cliente] Respuesta del servidor:
+{
+  "status": "exitoso",
+  "task_id": "task_1749...",
+  "resultado": "Tarea 'calcular' procesada correctamente",
+  "timestamp": "01:20:05"
+}
+```
 
-## Próximos Pasos (para producción)
-1. Implementar RabbitMQ para distribución asíncrona de tareas.
-2. Agregar Nginx/HAProxy como balanceador.
-3. Conectar a PostgreSQL para persistencia.
-4. Dockerizar los servicios.
+---
+
+## Tecnologías utilizadas
+
+- **Python 3** — lenguaje de implementación
+- **socket** — comunicación TCP entre cliente y servidor
+- **threading** — un hilo por cliente conectado
+- **concurrent.futures.ThreadPoolExecutor** — pool de workers para procesar tareas concurrentemente
+- **json** — serialización de mensajes
+
+## Componentes del sistema distribuido (diseño)
+
+| Componente | Tecnología |
+|---|---|
+| Balanceador de carga | Nginx / HAProxy |
+| Cola de mensajes | RabbitMQ |
+| Base de datos | PostgreSQL |
+| Almacenamiento de objetos | Amazon S3 / MinIO |

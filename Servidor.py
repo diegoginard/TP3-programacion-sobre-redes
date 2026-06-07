@@ -1,77 +1,54 @@
 import socket
 import threading
-import queue
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-class TaskServer:
-    def __init__(self, host='0.0.0.0', port=65432, max_workers=10):
-        self.host = host
-        self.port = port
-        self.task_queue = queue.Queue()
-        self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.running = True
+def procesar_tarea(tarea):
+    """Simula el procesamiento de una tarea en un worker."""
+    print(f"[Worker] Procesando tarea: {tarea['task_id']} | tipo: {tarea['tipo']}")
+    time.sleep(2)  # Simula trabajo
+    return {
+        "status": "exitoso",
+        "task_id": tarea["task_id"],
+        "resultado": f"Tarea '{tarea['tipo']}' procesada correctamente",
+        "timestamp": time.strftime("%H:%M:%S")
+    }
 
-    def process_task(self, task_data):
-        """Simula procesamiento de una tarea"""
-        try:
-            print(f"Procesando tarea: {task_data}")
-            # Simular trabajo (ej: cálculo, procesamiento)
-            time.sleep(2)  
-            
-            result = {
-                "status": "success",
-                "task_id": task_data.get("task_id"),
-                "result": f"Resultado de {task_data.get('type', 'unknown')}",
-                "processed_at": time.time()
-            }
-            return result
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+def manejar_cliente(conn, addr):
+    """Maneja la conexión de un cliente y despacha su tarea al pool."""
+    print(f"[Servidor] Conexión recibida desde {addr}")
+    try:
+        datos = conn.recv(4096).decode("utf-8")
+        tarea = json.loads(datos)
 
-    def handle_client(self, client_socket, addr):
-        """Maneja la conexión de un cliente"""
-        print(f"Conexión desde {addr}")
-        try:
-            data = client_socket.recv(4096).decode('utf-8')
-            if data:
-                task = json.loads(data)
-                print(f"Tarea recibida: {task}")
-                
-                # Enviar a thread pool
-                future = self.executor.submit(self.process_task, task)
-                result = future.result()
-                
-                # Responder al cliente
-                response = json.dumps(result).encode('utf-8')
-                client_socket.sendall(response)
-        except Exception as e:
-            print(f"Error manejando cliente {addr}: {e}")
-        finally:
-            client_socket.close()
+        # Enviamos la tarea al pool de workers
+        future = executor.submit(procesar_tarea, tarea)
+        resultado = future.result()
 
-    def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        print(f"Servidor escuchando en {self.host}:{self.port}")
+        conn.sendall(json.dumps(resultado).encode("utf-8"))
+    except Exception as e:
+        error = json.dumps({"status": "error", "mensaje": str(e)})
+        conn.sendall(error.encode("utf-8"))
+    finally:
+        conn.close()
+        print(f"[Servidor] Conexión cerrada: {addr}")
 
-        while self.running:
-            try:
-                client_socket, addr = server_socket.accept()
-                client_thread = threading.Thread(
-                    target=self.handle_client, 
-                    args=(client_socket, addr)
-                )
-                client_thread.daemon = True
-                client_thread.start()
-            except Exception as e:
-                print(f"Error aceptando conexión: {e}")
+HOST = "0.0.0.0"
+PORT = 65432
+MAX_WORKERS = 4
 
-        server_socket.close()
+executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
-if __name__ == "__main__":
-    server = TaskServer()
-    server.start()
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind((HOST, PORT))
+server.listen(10)
+
+print(f"[Servidor] Escuchando en {HOST}:{PORT} con {MAX_WORKERS} workers")
+
+while True:
+    conn, addr = server.accept()
+    hilo = threading.Thread(target=manejar_cliente, args=(conn, addr))
+    hilo.daemon = True
+    hilo.start()
